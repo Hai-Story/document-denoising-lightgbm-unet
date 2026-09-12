@@ -1,0 +1,5 @@
+numpy
+Pillow
+scipy
+opencv-python-headless
+lightgbm
