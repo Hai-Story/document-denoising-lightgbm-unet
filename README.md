@@ -1,43 +1,48 @@
 # Document Denoising with LightGBM
 
-基于多尺度图像特征与 LightGBM 像素回归的文档图像去噪项目。模型从受污染的灰度扫描图中恢复文字与纸张背景，输出每个像素在 `[0, 1]` 范围内的灰度预测。
+This repository contains a document image denoising solution based on multiscale image features and LightGBM pixel regression. The model restores text and paper backgrounds from degraded grayscale scans and predicts pixel intensities in the `[0, 1]` range.
 
-## 项目来源
+## Branches
 
-本项目是以下练习与竞赛的个人实现，与主办方无隶属关系：
+- `main`: multiscale image features with LightGBM regression
+- `unet`: patch-trained U-Net with full-image validation and flip test-time augmentation
+
+## Project Sources
+
+This is an independent solution to the following exercise and competition. It is not affiliated with their organizers.
 
 - [AI Coding Gym — Denoising Dirty Documents](https://aicodinggym.com/challenges/mle/denoising-dirty-documents)
 - [Kaggle — Denoising Dirty Documents](https://www.kaggle.com/competitions/denoising-dirty-documents)
 
-题目与数据集来自上述来源；本仓库仅提供实现代码与说明，不分发原始数据。请从来源页面获取数据，并遵守其使用条款。
+The problem statement and dataset come from the sources above. This repository contains implementation code only and does not redistribute the dataset. Obtain the data from an authorized source and follow its terms of use.
 
-## 方法
+## Method
 
-1. 提取像素邻域、不同尺度的高斯平滑、中值、局部最小值和最大值等特征。
-2. 利用局部最大值、平滑及形态学闭运算估计纸张背景，构建亮度差值和比值特征。
-3. 从训练图中随机抽样像素，用对应干净图的灰度训练 LightGBM 回归模型。
-4. 按图像划分训练与验证集，根据验证 RMSE 选择迭代次数，再用全部有标签图像重新训练。
-5. 对测试图逐像素预测，裁剪到 `[0, 1]`，生成比赛要求的 `id,value` 文件。
+1. Extract neighboring pixels, Gaussian features at several scales, local medians, minima, and maxima.
+2. Estimate the paper background with local maxima, smoothing, and morphological closing.
+3. Derive normalized brightness, background difference, and local variance features.
+4. Sample pixels from paired noisy and clean training images and fit a LightGBM regressor.
+5. Select the number of boosting rounds on an image-level holdout, refit on all labeled images, and predict the test pixels.
 
-这是一种基于手工图像特征的监督学习方案，不使用预训练模型。
+This is a supervised feature-engineering approach and does not use pretrained models.
 
-## 已有结果
+## Results
 
-| 评估 | RMSE（越低越好） |
+| Evaluation | RMSE (lower is better) |
 | --- | ---: |
-| 验证样本直接使用脏图灰度 | 0.157925 |
-| LightGBM 本地验证，预测裁剪后 | 0.015319 |
-| AI Coding Gym 提交评分 | 0.01416 |
+| Noisy pixels on the validation sample | 0.157925 |
+| Clipped LightGBM validation predictions | 0.015319 |
+| AI Coding Gym submission | 0.01416 |
 
-记录日期：2026-09-12。平台结果来自 AI Coding Gym，不能视为 Kaggle 官方排行榜成绩。
+Results were recorded on September 12, 2026. The submission score is from AI Coding Gym and is not a Kaggle leaderboard score.
 
-本次数据包含 115 张有标签图和 29 张测试图。验证按图像尺寸分层，划分为 95 张训练图、20 张验证图；每张训练图抽取 8,000 个像素，每张验证图抽取 25,000 个像素。上表本地 RMSE 基于验证像素样本，不是验证图的全像素评估。最终拟合使用全部 115 张有标签图，每图抽取 8,000 个像素。随机种子为 `20260912`，最终选择 1,599 轮。
+The available data contained 115 labeled images and 29 test images. The validation split was stratified by image height and contained 95 training images and 20 validation images. Training sampled 8,000 pixels per image, while validation sampled 25,000 pixels per image. The local RMSE above is therefore a sampled-pixel metric rather than a full-image metric. Final training used all 115 labeled images, 8,000 sampled pixels per image, seed `20260912`, and 1,599 boosting rounds.
 
-验证尚未按相同干净底稿分组，也未进行多次划分或交叉验证，因此本地结果的稳定性与对全新底稿的泛化能力仍需进一步评估。库版本和平台差异也可能影响复现结果。
+The split was not grouped by potentially shared clean source pages and was not repeated across multiple seeds. The validation estimate may therefore be optimistic, and library or platform differences may affect reproducibility.
 
-## 使用
+## Setup
 
-建议使用 Python 3.10 或更高版本，并在项目虚拟环境中安装依赖：
+Python 3.10 or newer is recommended.
 
 ```bash
 python3 -m venv .venv
@@ -45,9 +50,9 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Windows 可用 `.venv\Scripts\activate` 激活环境。macOS 上 LightGBM 还需要可被动态链接器找到的 OpenMP 运行库 `libomp.dylib`；它不包含在本仓库中。
+On Windows, activate the environment with `.venv\Scripts\activate`. On macOS, LightGBM also requires an OpenMP runtime such as `libomp.dylib` that can be found by the dynamic linker. The runtime is not included in this repository.
 
-从题目来源获取数据，解压后按以下目录组织：
+Arrange the downloaded data as follows:
 
 ```text
 document-denoising-lightgbm/
@@ -60,29 +65,33 @@ document-denoising-lightgbm/
     └── sampleSubmission.csv
 ```
 
-`train/` 与 `train_cleaned/` 中相同文件名应对应同一张图。运行：
+Files with the same name in `train/` and `train_cleaned/` must form a noisy-clean pair.
+
+## Run
 
 ```bash
 python solve.py
 ```
 
-输出为 `outputs/predictions.csv`，列为 `id,value`。ID 使用 `图号_行_列`，行列编号从 1 开始；程序按图片文件名字典序、图内行优先顺序写出。已提交版本的 5,789,880 个像素 ID 与本次数据的示例文件逐行核对一致，预测值均在 `[0, 1]` 范围内。程序本身不自动提交，也不自动执行该逐行校验；换用数据后应重新检查示例格式。
+The script writes `outputs/predictions.csv` with the columns `id,value`. Pixel IDs use the format `image_row_column`, with one-based row and column indices. Test images are processed in lexicographic filename order, and pixels are written in row-major order.
 
-脚本会重新训练模型并覆盖同名预测文件，模型权重暂不单独保存。
+For the recorded submission, all 5,789,880 pixel IDs were checked against the provided sample submission in exact row order, and all predicted values were within `[0, 1]`. The script does not automatically submit results or perform this full CSV comparison, so verify the output again when using a different dataset release.
 
-## 仓库范围
+Running the script retrains the model and overwrites the prediction file. Trained model weights are not saved separately.
 
-仓库仅保留源代码、依赖清单、说明和忽略规则。数据集、预测 CSV、模型权重、虚拟环境、缓存、编译产物、日志及本机工具配置均不纳入版本管理。发布使用独立的初始提交，不携带原工作区的历史记录。
+## Repository Scope
 
-## 后续改进
+Only source code, dependency declarations, documentation, and ignore rules are tracked. Datasets, prediction files, model weights, virtual environments, caches, compiled files, logs, and local tool configuration are excluded.
 
-- 检查重复底稿并按底稿分组验证，补充全像素 RMSE 和多次划分。
-- 分析文字边缘、文字内部与背景区域的误差。
-- 比较采样策略、背景估计窗口及 LightGBM 参数。
-- 尝试小型卷积网络，并在可靠验证集上评估模型融合。
+## Possible Improvements
 
-## 数据致谢
+- Group related source pages before splitting and add full-image, repeated validation.
+- Measure errors separately on text interiors, stroke edges, and paper backgrounds.
+- Compare sampling strategies, background estimation windows, and LightGBM parameters.
+- Evaluate ensembling with the U-Net implementation on the `unet` branch.
 
-依据题目介绍，数据集由 RM.J. Castro-Bleda、S. España-Boquera、J. Pastor-Pellicer 和 F. Zamora-Martinez 创建，UCI Machine Learning Repository 提供过数据托管。研究或发表时请查阅来源页面的引用要求，包括：
+## Dataset Acknowledgment
 
-Bache, K. & Lichman, M. (2013). UCI Machine Learning Repository. Irvine, CA: University of California, School of Information and Computer Science.
+According to the competition description, the dataset was created by RM.J. Castro-Bleda, S. España-Boquera, J. Pastor-Pellicer, and F. Zamora-Martinez, and was hosted by the UCI Machine Learning Repository. Consult the source pages for current citation requirements, including:
+
+Bache, K. & Lichman, M. (2013). *UCI Machine Learning Repository*. Irvine, CA: University of California, School of Information and Computer Science.
