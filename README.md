@@ -1,10 +1,10 @@
-# Document Denoising with U-Net
+# Document Denoising with LightGBM and U-Net
 
-This branch contains a compact U-Net solution for restoring degraded grayscale document scans. It learns a direct mapping from noisy image patches to clean pixels, validates on complete held-out images, and produces competition-ready pixel predictions.
+This repository preserves two independent solutions for restoring degraded grayscale document scans: multiscale image features with LightGBM pixel regression, and a patch-trained U-Net. Both implementations are available on `main` and use the same paired dataset.
 
 ## Branches
 
-- `main`: multiscale image features with LightGBM regression
+- `main`: both LightGBM (`solve.py`) and U-Net (`train_unet.py`)
 - `unet`: patch-trained U-Net with full-image validation and flip test-time augmentation
 
 ## Project Sources
@@ -16,7 +16,21 @@ This is an independent solution to the following exercise and competition. It is
 
 The problem statement and dataset come from the sources above. This repository contains implementation code only and does not redistribute the dataset. Obtain the data from an authorized source and follow its terms of use.
 
-## Method
+## LightGBM Method
+
+`solve.py` extracts neighboring pixels, multiscale Gaussian features, local medians, extrema, and paper-background estimates. A LightGBM regressor predicts clean pixel intensities from these features.
+
+The recorded split used 95 training images and 20 validation images, stratified by image height. Training sampled 8,000 pixels per image, while validation sampled 25,000 pixels per image. After selecting 1,599 boosting rounds, the model was refitted on all 115 labeled images. The split seed was `20260912`.
+
+| Evaluation | RMSE (lower is better) |
+| --- | ---: |
+| Noisy input on the validation sample | 0.157925 |
+| Clipped LightGBM validation predictions | 0.015319 |
+| AI Coding Gym submission | 0.01416 |
+
+These results were recorded on September 12, 2026. The external score is from AI Coding Gym, not the Kaggle leaderboard. Validation uses sampled pixels and a different split from U-Net, so the local scores are not a controlled comparison. Related clean source pages were not grouped before splitting.
+
+## U-Net Method
 
 The network uses a four-level encoder-decoder with skip connections. Each stage contains two convolution, batch normalization, and ReLU blocks. The implementation has approximately 7.76 million parameters with a base width of 32 channels.
 
@@ -33,13 +47,13 @@ Training uses the following configuration:
 
 The best checkpoint is selected by validation RMSE. Inference averages the original prediction with horizontal-flip and vertical-flip predictions, then quantizes the result to 8-bit grayscale before writing the submission file.
 
-## Recorded Result
+### Recorded U-Net Result
 
 | Evaluation | RMSE (lower is better) |
 | --- | ---: |
 | Best full-image validation result | 0.01045 |
 
-The recorded run trained on 107 images, validated on eight images, and completed 60 epochs in 6,427 seconds, or about 1 hour 47 minutes. The value above is a local validation result and is not a Kaggle leaderboard score. No external submission score is claimed for this branch.
+The recorded run trained on 107 images, validated on eight images, and completed 60 epochs in 6,427 seconds, or about 1 hour 47 minutes. The value above is a local validation result and is not a Kaggle leaderboard score. No external submission score is claimed for U-Net.
 
 The result comes from one fixed random split with seed `42`. It was not grouped by potentially shared source pages and was not repeated across multiple seeds, so it should not be treated as a robust estimate of performance on unrelated documents.
 
@@ -55,10 +69,13 @@ python -m pip install -r requirements.txt
 
 On Windows, activate the environment with `.venv\Scripts\activate`.
 
+On macOS, LightGBM also requires an OpenMP runtime such as `libomp.dylib` that can be found by the dynamic linker. The runtime is not included in this repository.
+
 Arrange the downloaded data as follows:
 
 ```text
 document-denoising-lightgbm/
+├── solve.py
 ├── train_unet.py
 ├── requirements.txt
 └── data/
@@ -72,13 +89,23 @@ Files with the same name in `train/` and `train_cleaned/` must form a noisy-clea
 
 ## Run
 
+Run LightGBM:
+
+```bash
+python solve.py
+```
+
+This trains LightGBM and writes `outputs/predictions.csv`. Model weights are not saved separately. The recorded submission contained 5,789,880 pixel IDs, checked against the sample submission in exact row order. The script does not automatically perform that comparison or submit predictions.
+
+Run U-Net:
+
 ```bash
 python train_unet.py
 ```
 
-The script saves the best model as `unet_best.pt` and writes predictions to `submission.csv`. The CSV contains the columns `id,value`, where IDs follow the one-based `image_row_column` format expected by the competition.
+The U-Net script saves the best model as `unet_best.pt` and writes predictions to `submission.csv`. Both methods produce CSV files with columns `id,value`, where IDs follow the one-based `image_row_column` format expected by the competition. Prediction values are in `[0, 1]`.
 
-The script retrains the network and overwrites the checkpoint and submission file. Runtime varies substantially by hardware; the recorded duration used Apple Metal acceleration.
+Each script retrains its model and overwrites its own outputs. Runtime varies substantially by hardware; the recorded U-Net duration used Apple Metal acceleration.
 
 ## Repository Scope
 

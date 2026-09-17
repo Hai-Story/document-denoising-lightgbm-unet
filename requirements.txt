@@ -1,3 +1,6 @@
 numpy
 Pillow
 torch
+scipy
+opencv-python-headless
+lightgbm
