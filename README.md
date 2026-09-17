@@ -1,6 +1,6 @@
-# Document Denoising with LightGBM
+# Document Denoising with U-Net
 
-This repository contains a document image denoising solution based on multiscale image features and LightGBM pixel regression. The model restores text and paper backgrounds from degraded grayscale scans and predicts pixel intensities in the `[0, 1]` range.
+This branch contains a compact U-Net solution for restoring degraded grayscale document scans. It learns a direct mapping from noisy image patches to clean pixels, validates on complete held-out images, and produces competition-ready pixel predictions.
 
 ## Branches
 
@@ -18,27 +18,30 @@ The problem statement and dataset come from the sources above. This repository c
 
 ## Method
 
-1. Extract neighboring pixels, Gaussian features at several scales, local medians, minima, and maxima.
-2. Estimate the paper background with local maxima, smoothing, and morphological closing.
-3. Derive normalized brightness, background difference, and local variance features.
-4. Sample pixels from paired noisy and clean training images and fit a LightGBM regressor.
-5. Select the number of boosting rounds on an image-level holdout, refit on all labeled images, and predict the test pixels.
+The network uses a four-level encoder-decoder with skip connections. Each stage contains two convolution, batch normalization, and ReLU blocks. The implementation has approximately 7.76 million parameters with a base width of 32 channels.
 
-This is a supervised feature-engineering approach and does not use pretrained models.
+Training uses the following configuration:
 
-## Results
+- 256 × 256 random patches
+- Horizontal and vertical flip augmentation
+- Batch size 8 and 200 optimization steps per epoch
+- Adam optimizer with a starting learning rate of `1e-3`
+- Cosine learning-rate schedule over 60 epochs
+- Eight complete images reserved for validation
+- Mean squared error training loss and full-image RMSE validation
+- Apple Metal acceleration when available, with CPU fallback
+
+The best checkpoint is selected by validation RMSE. Inference averages the original prediction with horizontal-flip and vertical-flip predictions, then quantizes the result to 8-bit grayscale before writing the submission file.
+
+## Recorded Result
 
 | Evaluation | RMSE (lower is better) |
 | --- | ---: |
-| Noisy pixels on the validation sample | 0.157925 |
-| Clipped LightGBM validation predictions | 0.015319 |
-| AI Coding Gym submission | 0.01416 |
+| Best full-image validation result | 0.01045 |
 
-Results were recorded on September 12, 2026. The submission score is from AI Coding Gym and is not a Kaggle leaderboard score.
+The recorded run trained on 107 images, validated on eight images, and completed 60 epochs in 6,427 seconds, or about 1 hour 47 minutes. The value above is a local validation result and is not a Kaggle leaderboard score. No external submission score is claimed for this branch.
 
-The available data contained 115 labeled images and 29 test images. The validation split was stratified by image height and contained 95 training images and 20 validation images. Training sampled 8,000 pixels per image, while validation sampled 25,000 pixels per image. The local RMSE above is therefore a sampled-pixel metric rather than a full-image metric. Final training used all 115 labeled images, 8,000 sampled pixels per image, seed `20260912`, and 1,599 boosting rounds.
-
-The split was not grouped by potentially shared clean source pages and was not repeated across multiple seeds. The validation estimate may therefore be optimistic, and library or platform differences may affect reproducibility.
+The result comes from one fixed random split with seed `42`. It was not grouped by potentially shared source pages and was not repeated across multiple seeds, so it should not be treated as a robust estimate of performance on unrelated documents.
 
 ## Setup
 
@@ -50,13 +53,13 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-On Windows, activate the environment with `.venv\Scripts\activate`. On macOS, LightGBM also requires an OpenMP runtime such as `libomp.dylib` that can be found by the dynamic linker. The runtime is not included in this repository.
+On Windows, activate the environment with `.venv\Scripts\activate`.
 
 Arrange the downloaded data as follows:
 
 ```text
 document-denoising-lightgbm/
-├── solve.py
+├── train_unet.py
 ├── requirements.txt
 └── data/
     ├── train/
@@ -70,25 +73,23 @@ Files with the same name in `train/` and `train_cleaned/` must form a noisy-clea
 ## Run
 
 ```bash
-python solve.py
+python train_unet.py
 ```
 
-The script writes `outputs/predictions.csv` with the columns `id,value`. Pixel IDs use the format `image_row_column`, with one-based row and column indices. Test images are processed in lexicographic filename order, and pixels are written in row-major order.
+The script saves the best model as `unet_best.pt` and writes predictions to `submission.csv`. The CSV contains the columns `id,value`, where IDs follow the one-based `image_row_column` format expected by the competition.
 
-For the recorded submission, all 5,789,880 pixel IDs were checked against the provided sample submission in exact row order, and all predicted values were within `[0, 1]`. The script does not automatically submit results or perform this full CSV comparison, so verify the output again when using a different dataset release.
-
-Running the script retrains the model and overwrites the prediction file. Trained model weights are not saved separately.
+The script retrains the network and overwrites the checkpoint and submission file. Runtime varies substantially by hardware; the recorded duration used Apple Metal acceleration.
 
 ## Repository Scope
 
-Only source code, dependency declarations, documentation, and ignore rules are tracked. Datasets, prediction files, model weights, virtual environments, caches, compiled files, logs, and local tool configuration are excluded.
+Only source code, dependency declarations, documentation, and ignore rules are tracked. Datasets, submissions, model checkpoints, virtual environments, caches, compiled files, logs, and local tool configuration are excluded.
 
 ## Possible Improvements
 
-- Group related source pages before splitting and add full-image, repeated validation.
-- Measure errors separately on text interiors, stroke edges, and paper backgrounds.
-- Compare sampling strategies, background estimation windows, and LightGBM parameters.
-- Evaluate ensembling with the U-Net implementation on the `unet` branch.
+- Group related source pages before splitting and repeat validation across several seeds.
+- Add early stopping and save structured training metrics.
+- Compare residual prediction, alternative normalization layers, and edge-aware losses.
+- Evaluate larger training crops, tiled inference, and a validation-tuned blend with the LightGBM solution.
 
 ## Dataset Acknowledgment
 
